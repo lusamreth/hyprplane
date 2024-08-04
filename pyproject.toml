@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "winpinner"
+version = "0.1.0"
+description = "simple hyprland controller"
+packages = [{include = "hyprplane"}]
+authors = ["lusamreth <somrethoverkill@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+cachetools = "^5.3.3"
+dbus-python = "^1.3.2"
+rich = "^13.7.1"
+structlog = "^24.4.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+start = "hyprplane.server:main"
