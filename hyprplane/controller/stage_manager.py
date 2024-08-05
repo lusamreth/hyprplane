@@ -41,9 +41,10 @@ class StageController(LayoutController):
         self.activeGroupIndex: int = 0
         self.window_open_queue = deque(maxlen=5)  # Store last 5 window open events
         self.event = threading.Event()
-        self.prevPos = []
-        self.is_processing = False
-        self.last_window_open_time = 0
+        self.prevPos: Dict[int,List] = {}
+        self.activeGroupIndice = Dict[int,int]
+        self.isProcessing = False
+        self.lastWindowOpenTime = 0
 
     def setEvent(self, event: threading.Event):
         pass
@@ -52,7 +53,7 @@ class StageController(LayoutController):
     async def start(self):
         # await self.eventServer()
         # threading.Thread(target=self._run_executor_loop).run()
-        self.hyprlandEvent.subscribe("openwindow", self.run)
+        self.hyprlandEvent.subscribe("openwindow", self.ensurePositionsLocked)
         self.hyprlandEvent.start()
 
     def _run_executor_loop(self):
@@ -76,19 +77,36 @@ class StageController(LayoutController):
             if et == "openwindow":
                 self.debounce_time = 0.1
                 current_time = asyncio.get_event_loop().time()
-                if current_time - self.last_window_open_time > self.debounce_time:
-                    self.last_window_open_time = current_time
+                if current_time - self.lastWindowOpenTime > self.debounce_time:
+                    self.lastWindowOpenTime = current_time
                     await self.handle_window_open()
                 # self.window_open_queue.append(asyncio.get_event_loop().time())
                 # if not self.is_processing:
                 #     asyncio.create_task(self.process_window_opens())
 
     async def handle_window_open(self):
-        initial_pos_count = len(self.prevPos)
+
+        initialWorkspace = self.currentWorkspaceId
+        if initialWorkspace is None: 
+            return
+
+        initial_pos_count = len(self.prevPos[initialWorkspace])
+        print("OPEN")
         self.max_retries = 5
         for attempt in range(self.max_retries):
+            aWindow = await self.getActiveWindow()
+            if aWindow is None: 
+                continue
+
+            currWid=aWindow["workspace"]["id"]
+            print("INITIAL",initialWorkspace,currWid)
+            if initialWorkspace != currWid:
+                return
+
             await self.enterStageManagerMode()
-            if len(self.prevPos) != initial_pos_count:
+            prevPosition = self.prevPos[self.currentWorkspaceId]
+
+            if len(prevPosition) != initial_pos_count:
                 return  # Success
 
             if attempt < self.max_retries - 1:
@@ -97,7 +115,7 @@ class StageController(LayoutController):
         print("Failed to update window positions after retries")
 
     async def process_window_opens(self):
-        self.is_processing = True
+        self.isProcessing = True
         try:
             while self.window_open_queue:
                 # Wait for a short time to see if more windows open
@@ -112,28 +130,30 @@ class StageController(LayoutController):
                     self.window_open_queue.popleft()
 
                 # Only enter stage manager mode if there were actually window opens
+                prevPositions = self.prevPos[self.currentWorkspaceId]
+
                 if not self.window_open_queue:
-                    initial_pos_count = len(self.prevPos)
+                    initial_pos_count = len(prevPositions)
                     await self.enterStageManagerMode()
-                    if len(self.prevPos) == initial_pos_count:
+                    if len(prevPositions) == initial_pos_count:
                         print(
                             "Stage manager mode did not update window positions as expected"
                         )
                         retry_count = 0
                         max_retries = 5
                         while (
-                            len(self.prevPos) == initial_pos_count
+                            len(prevPositions) == initial_pos_count
                             and retry_count < max_retries
                         ):
                             print(
                                 f"Attempting recovery - Retry {retry_count + 1}/{max_retries}"
                             )
                             await asyncio.sleep(1)  # Wait a bit before retrying
-                            await self.enterStageManagerMode()
+                            await self.applyStageManagerLayout()
                             retry_count += 1
                         # Here you might want to add some recovery logic
         finally:
-            self.is_processing = False
+            self.isProcessing = False
 
     async def setCurrentWorkspaceMode(self, mode: LayoutMode):
         win = await self.wController.getActiveWindow()
@@ -175,20 +195,38 @@ class StageController(LayoutController):
             # Popen(["hyprpm", "disable", "hyprbars"])
             await self.exitStageManagerMode()
 
+    def getWindowGroups(self,workspace: Optional[int]=None):
+        if workspace is None:
+            workspace = self.currentWorkspaceId
+
+        if workspace is None:
+            return []
+
+        groups = self.windowGroups.get(workspace) 
+        if groups is None:
+            return []
+
+        return groups
+
+    def setCurrWindowGroups(self,groups: list[WindowGroup]):
+        if self.currentWorkspaceId is None:
+            return 
+        
+        self.windowGroups[self.currentWorkspaceId] = groups
+
     async def loadWindowGroup(self):
         clients = await self.getWorkspaceClients()
         if not clients:
             return
 
-        print("SSF",self.currentWorkspaceId,self.windowGroups)
-        self.windowGroups[self.currentWorkspaceId] = self.createWindowGroups(clients)
+        self.setCurrWindowGroups(self.createWindowGroups(clients))
 
     async def enterStageManagerMode(self):
         await self.setCurrentWorkspaceMode(LayoutMode.STAGE_MANAGER)
         await self.loadWindowGroup()
         await self.applyStageManagerLayout()
 
-    async def run(self, event_data):
+    async def ensurePositionsLocked(self, event_data):
 
         self.event.wait()
         dataArray = event_data.split(",")
@@ -196,10 +234,11 @@ class StageController(LayoutController):
         currMode = await self.getCurrentWorkspaceMode()
 
         if currMode == LayoutMode.STAGE_MANAGER:
-            res = await hyprctlCommand(f"dispatch setfloating address:{addrs}", True)
+            await hyprctlCommand(f"dispatch setfloating address:{addrs}")
             await self.loadWindowGroup()
             # await self.add_window_to_stage(event_data)
             # self.currentMode = LayoutMode.STAGE_MANAGER
+            await self.setCurrentWorkspaceMode(LayoutMode.STAGE_MANAGER)
             await self.enterStageManagerMode()
 
         self.event.clear()
@@ -220,7 +259,7 @@ class StageController(LayoutController):
     #         await self.applyStageManagerLayout()
 
     async def eventServer(self):
-        self.hyprlandEvent.subscribe("openwindow", self.run)
+        self.hyprlandEvent.subscribe("openwindow", self.ensurePositionsLocked)
         # await self.hyprlandEvent.read_events()
 
     def createWindowGroups(self, clients: List[Dict]) -> List[WindowGroup]:
@@ -251,7 +290,7 @@ class StageController(LayoutController):
         currTS = asyncio.get_event_loop().time()
         print("CCU,cu", currTS)
         update_interval = 0.1
-        if currTS - self.last_window_open_time < update_interval:
+        if currTS - self.lastWindowOpenTime < update_interval:
             return  # Debounce: skip if too soon after last update
 
         if event_type == "openwindow":
@@ -260,12 +299,15 @@ class StageController(LayoutController):
             self.current_windows.discard(event_data)
         pass
 
-    async def applyStageManagerLayout(self):
+    def savePrevPosition(self,workspaceId:int,pos):
+        self.prevPos[workspaceId] = pos
+
+    async def applyStageManagerLayout(self,workspaceId: int | None = None):
         if not self.windowGroups:
             return
-        print("---- APPLIED ------",len(self.windowGroups[self.currentWorkspaceId][0].sideWindows))
+        # print("---- APPLIED ------",len(self.windowGroups[self.currentWorkspaceId][0].sideWindows))
 
-        await self.loadWindowGroup()
+        # await self.loadWindowGroup()
         screenWidth, screenHeight, offsetX, offsetY = await self.getScreenSize()
 
         # Main window dimensions (larger and positioned to the right)
@@ -281,15 +323,21 @@ class StageController(LayoutController):
         miniVerticalGap = 30  # Gap between minified windows
         miniHorizontalGap = 30  # Gap between columns when overflow occurs
 
-        clients = await self.getWorkspaceClients()
+        clients = await self.getWorkspaceClients(workspaceId)
         await self.toggleFloatingWorkspace(clients)
 
         # Position the active group's main window
-        currWorkGroup = self.windowGroups[self.currentWorkspaceId]
+        currWorkGroup = self.getWindowGroups(workspaceId)
         activeGroup = currWorkGroup[self.activeGroupIndex]
 
         await self.moveAndResizeWindow(
             activeGroup.mainWindow["address"], mainX, mainY, mainWidth, mainHeight
+        )
+        print("MAIN WIN",activeGroup.mainWindow["address"],mainX,mainY,mainWidth,mainHeight)
+
+        # await self.focusWindow(activeGroup.mainWindow["address"])
+        await hyprctlCommand(
+            f"dispatch movetoTop address:{activeGroup.mainWindow['address']}"
         )
 
         # Position minified windows for all groups in a vertical stack
@@ -300,8 +348,12 @@ class StageController(LayoutController):
             miniWindows.extend(group.sideWindows)
 
         maxWindowsPerColumn = (screenHeight - miniY) // (miniHeight + miniVerticalGap)
+        currId = workspaceId or self.currentWorkspaceId
 
-        self.prevPos = []
+        if currId is None:
+            return
+
+        self.savePrevPosition(currId,[])
 
         for i, window in enumerate(miniWindows):
             column = i // maxWindowsPerColumn
@@ -309,36 +361,51 @@ class StageController(LayoutController):
 
             xPosition = miniX + column * (miniWidth + miniHorizontalGap)
             yPosition = miniY + row * (miniHeight + miniVerticalGap)
-            self.prevPos.append({"x": xPosition, "y": yPosition, "w": miniWidth, "h": miniHeight})
+
+            self.prevPos[currId].append({"x": xPosition, "y": yPosition, "w": miniWidth, "h": miniHeight})
+
             await self.moveAndResizeWindow(
                 window["address"], xPosition, yPosition, miniWidth, miniHeight
             )
 
         # Raise the active window to the top
-        await hyprctlCommand(
-            f"dispatch movetoTop address:{activeGroup.mainWindow['address']}"
-        )
 
     async def cycleMainWindow(self):
-        if self.currentMode != LayoutMode.STAGE_MANAGER or not self.windowGroups:
+        if self.currentWorkspaceId is None:
+            return
+        
+        if self.currentMode.get(self.currentWorkspaceId) != LayoutMode.STAGE_MANAGER or not self.windowGroups.get(self.currentWorkspaceId):
             return
 
-        activeGroup = self.windowGroups[self.activeGroupIndex]
+
+        workspace_groups= self.getWindowGroups()
+        if not workspace_groups:
+            return
+
+        activeGroup = workspace_groups[self.activeGroupIndex]
         allWindows = [activeGroup.mainWindow] + activeGroup.sideWindows
         newMain = allWindows.pop(0)
         allWindows.append(newMain)
         newActive = WindowGroup(allWindows[0], allWindows[1:])
-        self.windowGroups[self.activeGroupIndex] = newActive
+        self.windowGroups[self.currentWorkspaceId][self.activeGroupIndex] = newActive
+        # workspace_groups
+        print("ALL MAIN,",newActive.mainWindow)
+        
         await self.focusWindow(newActive.mainWindow["address"])
         await self.applyStageManagerLayout()
 
-    async def getWorkspaceClients(self) -> List[Dict]:
-        activeWindow = await self.wController.getActiveWindow()
-        if activeWindow is None:
-            return []
+    async def getWorkspaceClients(self,specifiedId: int | None = None) -> List[Dict]:
+        activeWorkspace = specifiedId
 
-        self.currentWorkspaceId = activeWindow["workspace"]["id"]
-        print("SELLF",self.currentWorkspaceId)
+        if specifiedId is None: 
+            activeWindow = await self.wController.getActiveWindow()
+            if activeWindow is None:
+                return []
+
+            activeWorkspace = activeWindow["workspace"]["id"]
+            self.currentWorkspaceId = activeWorkspace
+
+
         cl = self.wController.props.get("clients")
 
         if cl is None:
@@ -352,5 +419,5 @@ class StageController(LayoutController):
         return [
             client
             for client in clients
-            if client["workspace"]["id"] == self.currentWorkspaceId
+            if client["workspace"]["id"] == activeWorkspace
         ]
