@@ -35,7 +35,9 @@ class StageController(LayoutController):
         self.hyprlandEvent = HyprlandEventHandler()
         self.currentMode: Dict[int, LayoutMode] = {}
         self.currentWorkspaceId: Optional[int] = None
-        self.windowGroups: List[WindowGroup] = []
+        # convert all window groups into a dictionary that directly disected
+        # through workspace id, each stage group panel
+        self.windowGroups: Dict[int,List[WindowGroup]] = {}
         self.activeGroupIndex: int = 0
         self.window_open_queue = deque(maxlen=5)  # Store last 5 window open events
         self.event = threading.Event()
@@ -137,8 +139,10 @@ class StageController(LayoutController):
         win = await self.wController.getActiveWindow()
         if win is None:
             return
+
         wid = win["workspace"]["id"]
-        print("WWIN",win["address"],wid)
+        print("WWIN",win["address"], wid)
+        
         self.currentWorkspaceId = wid
         self.currentMode[wid] = mode
 
@@ -151,6 +155,8 @@ class StageController(LayoutController):
         wid = win["workspace"]["id"]
         self.currentWorkspaceId = wid
         res = self.currentMode.get(wid)
+        print("CURR",wid,res)
+
         print("M",res)
         if res is None:
             await self.setCurrentWorkspaceMode(defaultMode)
@@ -161,7 +167,7 @@ class StageController(LayoutController):
 
     async def toggleLayoutMode(self):
         currMode = await self.getCurrentWorkspaceMode()
-        print("MODE",currMode)
+        print("MODE", self.currentMode)
         if currMode == LayoutMode.TILED:
             # Popen(["hyprpm", "enable", "hyprbars"])
             await self.enterStageManagerMode()
@@ -174,7 +180,8 @@ class StageController(LayoutController):
         if not clients:
             return
 
-        self.windowGroups = self.createWindowGroups(clients)
+        print("SSF",self.currentWorkspaceId,self.windowGroups)
+        self.windowGroups[self.currentWorkspaceId] = self.createWindowGroups(clients)
 
     async def enterStageManagerMode(self):
         await self.setCurrentWorkspaceMode(LayoutMode.STAGE_MANAGER)
@@ -197,20 +204,20 @@ class StageController(LayoutController):
 
         self.event.clear()
 
-    async def add_window_to_stage(self, window_address: str):
-        await hyprctlCommand(f"dispatch togglefloating address:{window_address}")
-        new_window = await self.wController.getWinFromGroup.getWindow(window_address)
+    # async def add_window_to_stage(self, window_address: str):
+    #     await hyprctlCommand(f"dispatch togglefloating address:{window_address}")
+    #     new_window = await self.wController.getWinFromGroup.getWindow(window_address)
 
-        if new_window:
-            if not self.windowGroups:
-                self.windowGroups.append(WindowGroup(new_window, []))
-            else:
-                last_group = self.windowGroups[-1]
-                if len(last_group.sideWindows) < 2:
-                    last_group.sideWindows.append(new_window)
-                else:
-                    self.windowGroups.append(WindowGroup(new_window, []))
-            await self.applyStageManagerLayout()
+    #     if new_window:
+    #         if not self.windowGroups:
+    #             self.windowGroups.append(WindowGroup(new_window, []))
+    #         else:
+    #             last_group = self.windowGroups[-1]
+    #             if len(last_group.sideWindows) < 2:
+    #                 last_group.sideWindows.append(new_window)
+    #             else:
+    #                 self.windowGroups.append(WindowGroup(new_window, []))
+    #         await self.applyStageManagerLayout()
 
     async def eventServer(self):
         self.hyprlandEvent.subscribe("openwindow", self.run)
@@ -228,14 +235,17 @@ class StageController(LayoutController):
         return groups
 
     async def exitStageManagerMode(self):
-        for group in self.windowGroups:
+        await self.setCurrentWorkspaceMode(LayoutMode.TILED)
+        if self.currentWorkspaceId is None :
+            return
+        print("WWW",self.windowGroups)
+        for group in self.windowGroups[self.currentWorkspaceId]:
             for window in [group.mainWindow] + group.sideWindows:
                 await hyprctlCommand(
                     f"dispatch settiled address:{window['address']}", True
                 )
 
-        await self.setCurrentWorkspaceMode(LayoutMode.TILED)
-        self.windowGroups = []
+        self.windowGroups[self.currentWorkspaceId] = []
 
     async def handleWindowChange(self, event_type):
         currTS = asyncio.get_event_loop().time()
@@ -253,7 +263,7 @@ class StageController(LayoutController):
     async def applyStageManagerLayout(self):
         if not self.windowGroups:
             return
-        print("---- APPLIED ------", len(self.windowGroups[0].sideWindows))
+        print("---- APPLIED ------",len(self.windowGroups[self.currentWorkspaceId][0].sideWindows))
 
         await self.loadWindowGroup()
         screenWidth, screenHeight, offsetX, offsetY = await self.getScreenSize()
@@ -275,14 +285,16 @@ class StageController(LayoutController):
         await self.toggleFloatingWorkspace(clients)
 
         # Position the active group's main window
-        activeGroup = self.windowGroups[self.activeGroupIndex]
+        currWorkGroup = self.windowGroups[self.currentWorkspaceId]
+        activeGroup = currWorkGroup[self.activeGroupIndex]
+
         await self.moveAndResizeWindow(
             activeGroup.mainWindow["address"], mainX, mainY, mainWidth, mainHeight
         )
 
         # Position minified windows for all groups in a vertical stack
         miniWindows = []
-        for i, group in enumerate(self.windowGroups):
+        for i, group in enumerate(currWorkGroup):
             if i != self.activeGroupIndex:
                 miniWindows.append(group.mainWindow)
             miniWindows.extend(group.sideWindows)
@@ -297,9 +309,7 @@ class StageController(LayoutController):
 
             xPosition = miniX + column * (miniWidth + miniHorizontalGap)
             yPosition = miniY + row * (miniHeight + miniVerticalGap)
-            self.prevPos.append(
-                {"x": xPosition, "y": yPosition, "w": miniWidth, "h": miniHeight}
-            )
+            self.prevPos.append({"x": xPosition, "y": yPosition, "w": miniWidth, "h": miniHeight})
             await self.moveAndResizeWindow(
                 window["address"], xPosition, yPosition, miniWidth, miniHeight
             )
@@ -328,6 +338,7 @@ class StageController(LayoutController):
             return []
 
         self.currentWorkspaceId = activeWindow["workspace"]["id"]
+        print("SELLF",self.currentWorkspaceId)
         cl = self.wController.props.get("clients")
 
         if cl is None:
