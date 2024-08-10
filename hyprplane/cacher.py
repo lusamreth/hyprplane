@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from cachetools import TTLCache
 
-from .utils import hyprctlCommand
+from .utils import hyprctl_cmd
 
 MAX_POOL = 4
 SHORT_LIVE_CACHE = 1
@@ -56,10 +56,10 @@ class HyprlandTask:
         )
 
     def asTask(self):
-        return lambda: hyprctlCommand(self.command, self.outputCapture)
+        return lambda: hyprctl_cmd(self.command, self.outputCapture)
 
     async def run(self):
-        return await hyprctlCommand(self.command, self.outputCapture)
+        return await hyprctl_cmd(self.command, self.outputCapture)
 
 
 class BackgroundRefresher:
@@ -72,7 +72,7 @@ class BackgroundRefresher:
 
 
 def hyprCommandBatchProcess(tasks: list[HyprlandTask]):
-    gatheringTask = [hyprctlCommand(task.command, task.outputCapture) for task in tasks]
+    gatheringTask = [hyprctl_cmd(task.command, task.outputCapture) for task in tasks]
     loop = asyncio.get_event_loop()
     result = loop.run_until_complete(asyncio.gather(*gatheringTask))
 

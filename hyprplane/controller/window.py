@@ -6,7 +6,7 @@ from multiprocessing.process import current_process
 
 from ..cacher import CacheControl, HyprlandTask
 from ..libnotify import notification
-from ..utils import hyprctlCommand
+from ..utils import hyprctl_cmd
 
 SOCKET_PATH = "/tmp/hyprland_controller.sock"
 
@@ -73,7 +73,7 @@ INITIAL_LOOKUP_TABLE = {
 }
 
 class WindowController:
-    def __init__(self, wind_manager_executor=hyprctlCommand) -> None:
+    def __init__(self, wind_manager_executor=hyprctl_cmd) -> None:
         self.execute = wind_manager_executor
         self.pinLockTable = INITIAL_LOOKUP_TABLE
         self.props = {
@@ -133,7 +133,7 @@ class WindowController:
 
         return workspaceClients
 
-    async def focusWindow(self, addrs: str):
+    async def focus_window(self, addrs: str):
         await self.execute(f"dispatch focuswindow address:{addrs}")
         await self.execute(f"dispatch bringactivetotop")
         return
@@ -344,7 +344,7 @@ class WindowController:
         print(
             f"Toggling from index {currentIndex} to {nextIndex} in group '{currentGroup}'."
         )
-        await self.focusWindow(next_window)
+        await self.focus_window(next_window)
         self.pinLockTable["nextIndex"] = nextIndex
 
     async def toggleWithinGroup(self, direction="forward"):
@@ -392,7 +392,7 @@ class WindowController:
         )
 
         nextWindow = windows[nextIndex]
-        await self.focusWindow(nextWindow)
+        await self.focus_window(nextWindow)
         groupState["index"] = nextIndex
 
     def listGroups(self):

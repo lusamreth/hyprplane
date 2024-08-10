@@ -68,6 +68,7 @@ async def startController():
     mainLoopEvent = threading.Event()
     layoutCont = StageController(windCont)
     layoutCont.setEvent(mainLoopEvent)
+
     # this one is dodo
     await layoutCont.start()
     cont = buildController(windowstack, windCont, layoutCont)

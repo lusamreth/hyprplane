@@ -30,9 +30,9 @@ class ToggleCommand(CommandStrategy):
                 return
 
             windStack.appendToStack(active["address"])
-            await controller.focusWindow(windAddrs)
+            await controller.focus_window(windAddrs)
         else:
-            await controller.focusWindow(prev)
+            await controller.focus_window(prev)
             windStack.appendToStack(windAddrs)
 
 
@@ -71,9 +71,9 @@ class PinCommand(CommandStrategy):
         active = active["address"]
         prev = windStack.getPrev()
         if prev is None or active == wIndex1:
-            await controller.focusWindow(wIndex2)
+            await controller.focus_window(wIndex2)
         else:
-            await controller.focusWindow(wIndex1)
+            await controller.focus_window(wIndex1)
 
 
 class LaunchPair(CommandStrategy):
@@ -180,7 +180,7 @@ class EnterStage(CommandStrategy):
 
     async def execute(self, controller: StageController, windStack: WindowStack, args):
         dir = args[0] if args else self.clearance
-        await controller.toggleLayoutMode()
+        await controller.toggle_layout_mode()
 
 
 class CycleStage(CommandStrategy):

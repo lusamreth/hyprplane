@@ -40,7 +40,7 @@ async def getEventStreamRetry(
 
 
 # Function to execute hyprctl command and return the output as JSON
-async def hyprctlCommand(command, getOutput=False):
+async def hyprctl_cmd(command, getOutput=False):
     start = time.perf_counter()
     output = None
     reader, writer = await getHyprCtlHandle()
