@@ -59,7 +59,7 @@ class HyprlandEventHandler:
         self.subscribers: Dict[str, list[Callable]] = {}
         self.event_stream_path = getEventStreamPath()
         self.loop = None
-        self.msgQueue = Queue()
+        self.msg_queue = Queue()
         self.running = False
 
     def start(self):
@@ -69,6 +69,8 @@ class HyprlandEventHandler:
         # Thread(target=self._run_executor_loop).start()
 
     def _run_event_loop(self):
+        print("Running event thread")
+        self.running = True
         """Run the asyncio event loop in the new thread."""
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
@@ -101,7 +103,7 @@ class HyprlandEventHandler:
                 events = data.decode().strip().split("\n")
 
                 for event in events:
-                    self.msgQueue.put_nowait(event)
+                    self.msg_queue.put_nowait(event)
 
             except Exception as e:
                 print(f"Error reading from socket: {e}")

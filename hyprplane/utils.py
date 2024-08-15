@@ -54,6 +54,8 @@ async def hyprctl_cmd(command, getOutput=False):
         data = await reader.read()
         output = data.decode().strip()
         # print("raw", output)
+
+        writer.close()
         if output == "ok":
             return
         if not output:
@@ -61,6 +63,7 @@ async def hyprctl_cmd(command, getOutput=False):
             return None
         if getOutput:
             return json.loads(output)
+
     except FileNotFoundError as e:
         print(f"File socket not found.Is hyprland running?")
         return None
@@ -71,6 +74,3 @@ async def hyprctl_cmd(command, getOutput=False):
     except Exception as e:
         print(f"Error running command: {e}")
         return None
-
-    end = time.perf_counter()
-    print("hyprland exec time", end - start)
