@@ -32,7 +32,11 @@ class CacheControl(TTLCache):
             return result
 
         self.__setitem__("_STORE", result)
+        self.event.clear()
         return result
+
+    def revoke(self):
+        self.__setitem__("_STORE", None)
 
 
 @dataclass
