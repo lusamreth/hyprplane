@@ -24,7 +24,7 @@ class ToggleCommand(CommandStrategy):
 
         windAddrs = await controller.getWindowAddress(arg[0])
         if prev is None:
-            active = await controller.getActiveWindow()
+            active = await controller.get_active_window()
             if windAddrs is None or active is None:
                 print("Invalid window classname")
                 return
@@ -64,7 +64,7 @@ class PinCommand(CommandStrategy):
         wIndex1 = windStack.stacks[-1]
         wIndex2 = windStack.stacks[-2]
 
-        active = await controller.getActiveWindow()
+        active = await controller.get_active_window()
         if active is None:
             return
 
@@ -120,7 +120,7 @@ class ModifyLockGroupCommand(CommandStrategy):
             print("Must supply group name and window class.")
             return
 
-        win = await controller.getActiveWindow()
+        win = await controller.get_active_window()
         curr = controller.pinLockTable["currentGroup"]
         if win is None:
             return
@@ -129,7 +129,7 @@ class ModifyLockGroupCommand(CommandStrategy):
         controller.getWinFromGroup(curr)
         if windowAddress:
             controller.addWindowToGroup(curr, windowAddress)
-            currentWindow = await controller.getActiveWindow()
+            currentWindow = await controller.get_active_window()
             if currentWindow:
                 await controller.lockWindow()
 
@@ -190,4 +190,4 @@ class CycleStage(CommandStrategy):
 
     async def execute(self, controller: StageController, windStack: WindowStack, args):
         dir = args[0] if args else self.clearance
-        await controller.cycleMainWindow()
+        await controller.cycle_main_window()
