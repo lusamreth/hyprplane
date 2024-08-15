@@ -10,6 +10,7 @@ from ..utils import hyprctl_cmd
 
 SOCKET_PATH = "/tmp/hyprland_controller.sock"
 
+
 def timeIt(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -61,16 +62,18 @@ class WindowStack:
         if len(self.stacks) >= BUFF_SIZE:
             self.stacks.clear()
 
+
 INITIAL_LOOKUP_TABLE = {
     "classLookup": {},
     "currentGroup": None,  # Currently active group
     "orders": [],
     "groupStates": {},  # Tracks state per group, e.g., {"lock1": {"index": 0}}
     "groups": {},  # Dictionary to store groups, e.g., {"lock1": [], "lock2": []}
-    "groupOrders": [], # Order array to store the groupname and keep track
-    "_gcount":0, # internal counter to keep track of groupOrders
+    "groupOrders": [],  # Order array to store the groupname and keep track
+    "_gcount": 0,  # internal counter to keep track of groupOrders
     "_count": 0,
 }
+
 
 class WindowController:
     def __init__(self, wind_manager_executor=hyprctl_cmd) -> None:
@@ -116,8 +119,8 @@ class WindowController:
         print("No window with class {} founded!".format(className))
         return None
 
-    async def getWindowWithinWorkspace(self,workspace:int):
-        clientFetcher = self.props.get('clients')
+    async def getWindowWithinWorkspace(self, workspace: int):
+        clientFetcher = self.props.get("clients")
         if clientFetcher is None:
             return None
 
@@ -127,7 +130,7 @@ class WindowController:
             return []
 
         for client in clients:
-            print("client",client["workspace"]["id"],workspace)
+            print("client", client["workspace"]["id"], workspace)
             if client["workspace"]["id"] == workspace:
                 workspaceClients.append(client)
 
@@ -140,10 +143,10 @@ class WindowController:
 
     async def moveWindow(self, addrs, target_workspace: int):
         return await self.execute(
-            f"dispatch movetoworkspace {target_workspace} {addrs}"
+            f"get_active_windowworkspace {target_workspace} {addrs}"
         )
 
-    async def getActiveWindow(self):
+    async def get_active_window(self):
         active_window = await self.execute("activewindow", getOutput=True)
         if active_window is None:
             return
@@ -152,7 +155,7 @@ class WindowController:
 
     async def lockWindow(self):
 
-        currentWin = await self.getActiveWindow()
+        currentWin = await self.get_active_window()
         if currentWin is None:
             return
 
@@ -160,8 +163,8 @@ class WindowController:
         address = currentWin["address"]
 
         currLockGroup = self.pinLockTable["currentGroup"]
-        if currLockGroup is None: 
-            self.createGroup("Default") 
+        if currLockGroup is None:
+            self.createGroup("Default")
             currLockGroup = "Default"
 
         groupTable = self.pinLockTable.get("groups", {}).get(currLockGroup, [])
@@ -185,10 +188,9 @@ class WindowController:
     async def clearWindowPin(self):
         self.pinLockTable["orders"].clear()
         self.pinLockTable["classLookup"] = {}
-        return
 
     async def unpinCurrWindow(self):
-        currentWin = await self.getActiveWindow()
+        currentWin = await self.get_active_window()
         print(currentWin)
         if currentWin is None:
             return
@@ -301,14 +303,14 @@ class WindowController:
         if group_name in self.pinLockTable["groups"]:
             del self.pinLockTable["groups"][group_name]
             del self.pinLockTable["groupState"][group_name]
-            for i,order in enumerate(self.pinLockTable["groupOrders"]):
+            for i, order in enumerate(self.pinLockTable["groupOrders"]):
                 if order == group_name:
                     self.pinLockTable["groupOrders"].pop(i)
                     return
             print(f"Group '{group_name}' cleared.")
         else:
             print(f"Group '{group_name}' does not exist.")
-    
+
     def deleteGroup(self, group_name):
         if group_name in self.pinLockTable["groups"]:
             del self.pinLockTable["groups"][group_name]
@@ -358,10 +360,10 @@ class WindowController:
         currentIndex = groupState["index"]
 
         if not windows:
-            print(f"No windows in group '{currentGroup}' to toggle.")
+            print(f"No windows to toggle.")
             return
 
-        currentWindow = await self.getActiveWindow()
+        currentWindow = await self.get_active_window()
         if currentWindow is None:
             return
 
